@@ -1,14 +1,134 @@
 require 'hangman/version'
 require 'hangman/word'
 require 'hangman/message'
+# require 'game'
 
 module Hangman
   class Game
     include(Message)
-    attr_accessor :turns, :history, :status, :words, :feedback
-    def initialize
-      @words = []
+    attr_accessor :turns, :history, :word, :feedback, :status
+
+    def initialize(difficulty, feedback)
+      word = Word.new
+      @word = word.generate(difficulty)
       @history = []
+      @turns = 7 + difficulty
+      @feedback = feedback
+      @status = 'play'
+    end
+
+    def control(input)
+      if input.size > 1
+        commands(input)
+      elsif input.size == 1
+        play(input)
+      else
+        invalid_prompt
+      end
+    end
+
+    def commands(input)
+      case input
+        when ':h', 'history' then print_text("You have used: #{game_history}")
+        when ':q', 'quit' then quit
+        else invalid_promt
+      end
+    end
+
+    def play(input)
+      include_letter(input, @history)
+      @turns -= 1 unless @word.include?(input)
+      check_game
+    end
+
+    def include_letter(letter, history)
+      if history.include?(letter)
+        duplicate_prompt(letter)
+        false
+      else
+        @history << letter
+      end
+    end
+
+    def check_game
+      if won? then game_won
+      elsif lost? then game_lost
+      else
+        turns_prompt(@turns)
+        show_word
+      end
+    end
+
+    def show_word
+      word = @word.split('')
+      output = ''
+      word.each do |letter|
+        if @history.include?(letter)
+          output << "#{letter} "
+        else
+          output << '_ '
+        end
+      end
+      puts output
+    end
+
+    def won?
+      word = @word.split('')
+      length = 0
+      word.each {|val| length += 1 if @history.include?(val)}
+      if length == word.size
+        true
+      else
+        false
+      end
+    end
+
+    def lost?
+      @turns == 0
+    end
+
+    def game_won
+      if @feedback == 2
+        won_gui(@word)
+      else
+        won_prompt(@word)
+      end
+      replay_prompt
+      @history = []
+      return false
+      @status = 'restart'
+    end
+
+    def game_lost
+      if @feedback == 2
+        lost_gui(@word)
+      else
+        lost_prompt(@word)
+      end
+      replay_prompt
+      @history = []
+      @status = 'restart'
+    end
+
+    def game_history
+      output = ''
+      if @history.empty?
+        ''
+      else
+        @history.each {|letter| output << "#{letter} "}
+      end
+    end
+
+    def quit_game
+      @status = 'quit'
+      save_prompt
+    end
+  end
+
+  class Router
+    include(Message)
+    attr_accessor :status, :difficulty, :feedback, :game
+    def initialize
       @status = 'begin'
     end
 
@@ -30,22 +150,24 @@ module Hangman
         level_prompt
         @status = 'start'
       elsif @status == 'start'
-        input = input.to_i
-        if input < 1 || input > 3
+        @difficulty = input.to_i
+        if @difficulty < 1 || @difficulty > 3
           level_prompt
           return
         end
         @status = 'play'
         begin_prompt
-        word = Word.new
-        word.generate(input.to_i)
-        @words << word.generate(input)
-        @turns = 6 + input
-        size_prompt(@words.last.size)
-        turns_prompt(@turns)
-        show_word
+        @game = Game.new(@difficulty, @feedback)
+        size_prompt(@game.word.size)
+        turns_prompt(@game.turns)
+        print_text(@game.show_word)
       elsif @status == 'play'
-        play(input)
+        if @game.status == 'restart'
+          @status = 'start'
+          process(input)
+        else
+          @game.control(input)
+        end
       elsif @status == 'finish'
         if input == 'r' || 'restart'
           @status = 'start'
@@ -58,112 +180,10 @@ module Hangman
       end
     end
 
-    def show_word
-      word = @words.last.split('')
-      word.each do |val|
-        if @history.include?(val)
-          print "#{val} "
-        else
-          print '_ '
-        end
-      end
-      print "\n"
-    end
-
     def start_game
       @status = 'feedback'
       welcome_prompt
       feedback_prompt
-    end
-
-    def play(input)
-      if input.size > 1
-        case input
-          when ':h', 'history' then show_history
-          when ':q', 'quit' then quit_game
-          else invalid_promt
-        end
-      elsif input.size == 1
-        include_letter(input)
-        check_word(input)
-      else
-        invalid_prompt
-      end
-    end
-
-    def check_word(input)
-      if won? then game_won
-      elsif lost? then game_lost
-      else
-        turns_prompt(@turns)
-        show_word
-      end
-    end
-
-    def include_letter(input)
-      if @history.include?(input)
-        duplicate_prompt(input)
-      else
-        @history << input
-        @turns -= 1 unless @words.last.include?(input)
-      end
-    end
-
-    def won?
-      word = @words.last.split('')
-      length = 0
-      word.each do |val|
-        length += 1 if @history.include?(val)
-      end
-
-      if length == word.size
-        true
-      else
-        false
-      end
-    end
-
-    def game_won
-      if @feedback == 1
-        won_prompt(@words.last)
-      else
-        won_gui(@words.last)
-      end
-      @history = []
-      @status = 'finish'
-      replay_prompt
-    end
-
-    def lost?
-      @turns == 0
-    end
-
-    def show_history
-      if @history.empty?
-        empty_prompt
-      else
-        print 'You have used: '
-        @history.each do |letter|
-          print "#{letter} "
-        end
-        print "\n"
-      end
-    end
-
-    def game_lost
-      if @feedback == 1
-        lost_prompt(@words.last)
-      else
-        lost_gui(@words.last)
-      end
-      @history = []
-      @status = 'finish'
-      replay_prompt
-    end
-
-    def quit_game
-      @status = 'quit'
-      save_prompt
     end
 
     def save_game
@@ -177,7 +197,7 @@ module Hangman
       file.puts("\n")
       file.close
       thanks_prompt
-      $stop = true
+      @status = 'end'
     end
 
     def load_game
@@ -207,14 +227,12 @@ module Hangman
   end
 end
 
-game = Hangman::Game.new
-game.instructions_prompt
+session = Hangman::Router.new
+session.instructions_prompt
 
 repl = lambda do |prompt|
   print prompt
-  game.process(gets.chomp!)
+  session.process(gets.chomp!)
 end
 
-$stop = false
-
-repl['% Hangman-0.1.0: '] while $stop == false
+repl['% Hangman-0.1.0: '] while session.status != 'end'
